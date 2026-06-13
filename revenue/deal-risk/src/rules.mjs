@@ -58,20 +58,38 @@ export function detectFlags(record) {
     });
   }
 
-  // 3. Mortgage on record without observable release (open-data archive only — LIMITED).
+  // 3. Mortgage on record without observable release (open-data ARCHIVE 2011–2015).
+  //
+  // PRECISION POSTURE: this fired on ~40% of recently-sold parcels in validation,
+  // which is almost all noise — an old (2011–2015) mortgage on a property that has
+  // since SOLD was virtually always paid off at that sale. The CURRENT mortgage
+  // picture now comes from the live recorder (OPEN_MORTGAGE_LIVE), which is owner-
+  // and PIN-scoped. So we suppress this archive flag when there is a recorded sale
+  // AFTER the archive mortgage, and otherwise demote it to INFO/historical. Never
+  // present a long-superseded mortgage to an agent as a live concern.
   const morts = (record.recorder && record.recorder.mortgages) || [];
-  if (morts.length) {
+  const latestSaleDate = (record.sales || [])
+    .map((s) => (s.sale_date ? new Date(s.sale_date) : null))
+    .filter(Boolean)
+    .sort((a, b) => b - a)[0] || null;
+  const archiveMortsStillRelevant = morts.filter((m) => {
+    const d = m.recorded_date ? new Date(m.recorded_date) : null;
+    // Suppress if a sale post-dates the mortgage (it was almost certainly paid off).
+    if (d && latestSaleDate && latestSaleDate > d) return false;
+    return true;
+  });
+  if (archiveMortsStillRelevant.length) {
     add({
       code: "MORTGAGE_UNVERIFIED_RELEASE",
-      severity: SEV.MED,
-      title: `${morts.length} recorded mortgage(s) found (release not verifiable in open data)`,
-      why: "Open mortgages must be paid/released at closing. Open-data archive does not include releases, so payoff/release status cannot be confirmed here.",
-      curative: "Run live recordings search to match each mortgage to a release/satisfaction; order payoffs as needed.",
-      evidence: morts.slice(0, 5).map((r) => ({
+      severity: SEV.INFO, // historical/coverage-limited — not a current-cloud assertion
+      title: `${archiveMortsStillRelevant.length} historical mortgage(s) (2011–2015) without a sale recorded since`,
+      why: "An older recorded mortgage has no later sale on record, so its payoff/release isn't confirmable from the open-data archive. The live recordings search is the authoritative current check.",
+      curative: "Confirm release/satisfaction via the live recordings search; order payoff if still open.",
+      evidence: archiveMortsStillRelevant.slice(0, 5).map((r) => ({
         document_number: r.document_number, recorded_date: r.recorded_date,
-        amount: r.consideration_amount, source: "Recorder Mortgages (open-data archive)",
+        amount: r.consideration_amount, source: "Recorder Mortgages (open-data archive 2011–2015)",
       })),
-      confidence: 0.4, // coverage-limited
+      confidence: 0.3, // coverage-limited + historical
     });
   }
 

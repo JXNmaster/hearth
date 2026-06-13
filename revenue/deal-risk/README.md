@@ -14,9 +14,17 @@ Two intended uses from one engine:
 ## Run
 ```bash
 node src/cli.mjs --pin 16-26-210-007-0000 --html report.html --json out.json
-node src/cli.mjs --address "3445 W 23RD ST" --seller "JANE DOE"
-node src/test-sources.mjs 12      # source performance harness
+node src/cli.mjs --address "3445 W 23RD ST 60623" --seller "JANE DOE"
+node src/cli.mjs --pin 16-26-210-007-0000 --agent --html r.html \
+  --firm "Lakeshore Title Law" --contact "team@lakeshoretitle.com"   # agent edition
+node src/batch.mjs sample-listings.csv --firm "Firm" --contact email  # -> ./out/*.html + summary.csv
+node src/validate.mjs 25           # full-pipeline validation harness
+node src/test-sources.mjs 12       # source performance harness
 ```
+
+Address input is tokenized + ranked (`src/resolve.mjs`); an ambiguous address
+returns candidate PINs to disambiguate rather than guessing. See `VALIDATION.md`
+for measured coverage/latency and the honest precision posture.
 
 Optional: `SOCRATA_APP_TOKEN` env var raises open-data rate limits.
 
@@ -33,14 +41,18 @@ Optional: `SOCRATA_APP_TOKEN` env var raises open-data rate limits.
 src/
   socrata.mjs            generic SODA client (retry/timeout)
   normalize.mjs          PIN + name normalization, fuzzy name match
+  resolve.mjs            address tokenize → rank → match/ambiguous/none
   sources/
     assessor.mjs         address→PIN→owner, sales, value
     treasurer.mjs        tax-sale signals
     recorderArchive.mjs  historical recorder (2011–2015)
-    recorderLive.mjs     LIVE recordings scrape + instrument analysis
+    recorderLive.mjs     LIVE recordings scrape + PIN/name-scoped analysis
   rules.mjs              defect detection (auditable, severity-tagged)
-  report.mjs             HTML + terminal renderers
+  report.mjs             internal HTML + terminal renderers
+  reportAgent.mjs        branded, plain-English, print-clean agent edition
   pipeline.mjs           orchestration
-  cli.mjs                entrypoint
+  cli.mjs                entrypoint (--agent for the lead-magnet edition)
+  batch.mjs              CSV → agent reports + summary.csv (outreach core)
+  validate.mjs           full-pipeline validation harness
   test-sources.mjs       performance harness
 ```
