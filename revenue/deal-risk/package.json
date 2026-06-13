@@ -1,0 +1,13 @@
+{
+  "name": "deal-risk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cook County Deal-Risk / title pre-clearance pipeline (open-data tier)",
+  "bin": { "deal-risk": "src/cli.mjs" },
+  "scripts": {
+    "run": "node src/cli.mjs",
+    "test:sources": "node src/test-sources.mjs"
+  },
+  "engines": { "node": ">=20" }
+}
