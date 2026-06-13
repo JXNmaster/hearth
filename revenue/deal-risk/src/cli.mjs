@@ -5,6 +5,7 @@
 //   node src/cli.mjs --address "1060 W ADDISON ST" [--html out.html]
 import { runPipeline } from "./pipeline.mjs";
 import { renderHtml, renderTerminal } from "./report.mjs";
+import { renderAgentHtml } from "./reportAgent.mjs";
 import { writeFileSync } from "node:fs";
 
 function parseArgs(argv) {
@@ -22,9 +23,26 @@ if (!args.pin && !args.address) {
   process.exit(1);
 }
 
-const result = await runPipeline({ pin: args.pin, address: args.address, seller: args.seller });
-if (!result.ok) { console.error("ERROR:", result.error); process.exit(2); }
+const result = await runPipeline({ pin: args.pin, address: args.address, seller: args.seller, zip: args.zip, city: args.city });
+if (!result.ok) {
+  console.error("ERROR:", result.error);
+  if (result.ambiguous && result.candidates?.length) {
+    console.error("\nMultiple candidate parcels — re-run with --pin <one of these> (or add --zip):");
+    for (const c of result.candidates.slice(0, 8)) console.error(`  ${c.pin}  ${c.address}  ${c.city} ${c.zip}  (score ${c.score})`);
+  }
+  process.exit(2);
+}
 
 console.log(renderTerminal(result));
-if (args.html) { writeFileSync(args.html === true ? `deal-risk-${result.pin}.html` : args.html, renderHtml(result, args.firm)); console.log(`\nHTML report -> ${args.html === true ? `deal-risk-${result.pin}.html` : args.html}`); }
+
+// Choose renderer: --agent emits the branded, plain-English lead-magnet edition.
+const renderHtmlEdition = args.agent
+  ? (res) => renderAgentHtml(res, { firm: args.firm, firmContact: args.contact, agentName: args["agent-name"] })
+  : (res) => renderHtml(res, args.firm);
+
+if (args.html) {
+  const out = args.html === true ? `deal-risk-${result.pin}${args.agent ? "-agent" : ""}.html` : args.html;
+  writeFileSync(out, renderHtmlEdition(result));
+  console.log(`\nHTML report -> ${out}${args.agent ? " (agent edition)" : ""}`);
+}
 if (args.json) { writeFileSync(args.json === true ? `deal-risk-${result.pin}.json` : args.json, JSON.stringify(result, null, 2)); }
