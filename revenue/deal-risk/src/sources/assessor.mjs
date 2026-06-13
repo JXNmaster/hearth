@@ -6,6 +6,7 @@
 //   Assessed Values   uzyt-m557  (pin -> assessed value)
 import { soda, soqlLit } from "../socrata.mjs";
 import { normPin, normAddress } from "../normalize.mjs";
+import { resolveAddress } from "../resolve.mjs";
 
 const DS = {
   universe: "nj4t-kc8j",
@@ -14,19 +15,11 @@ const DS = {
   assessed: "uzyt-m557",
 };
 
-// Resolve a free-text street address to candidate PINs (most-recent year first).
-export async function addressToPins(address, limit = 10) {
-  const q = normAddress(address);
-  const res = await soda(DS.addresses, {
-    "$select": "pin, prop_address_full, year",
-    "$where": `upper(prop_address_full) like '%${soqlLit(q)}%'`,
-    "$order": "year DESC",
-    "$limit": limit,
-  });
-  // De-dupe PINs keeping the most recent year row.
-  const seen = new Map();
-  for (const r of res.rows) if (!seen.has(r.pin)) seen.set(r.pin, r);
-  return { ok: res.ok, ms: res.ms, error: res.error, candidates: [...seen.values()] };
+// Resolve a free-text street address to candidate PINs.
+// Delegates to the hardened resolver (tokenize + rank + dedupe + disambiguate).
+// Returns the resolver's full result so callers can detect "ambiguous" vs "match".
+export async function addressToPins(address, opts = {}) {
+  return resolveAddress(address, opts);
 }
 
 export async function parcelInfo(pin) {

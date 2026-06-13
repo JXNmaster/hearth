@@ -6,21 +6,28 @@ import { recorderByName, analyzeInstruments } from "./sources/recorderLive.mjs";
 import { detectFlags, summarize } from "./rules.mjs";
 import { normPin, formatPin } from "./normalize.mjs";
 
-export async function resolvePin({ pin, address }) {
+export async function resolvePin({ pin, address, zip, city }) {
   if (pin) return { pin: normPin(pin), resolvedFrom: "pin", candidates: [] };
   if (address) {
-    const r = await assessor.addressToPins(address);
-    if (!r.ok) return { pin: null, error: r.error, candidates: [] };
-    if (!r.candidates.length) return { pin: null, error: "no PIN found for address", candidates: [] };
-    return { pin: normPin(r.candidates[0].pin), resolvedFrom: "address", candidates: r.candidates };
+    const r = await assessor.addressToPins(address, { zip, city });
+    if (!r.ok) return { pin: null, error: r.error || "address lookup failed", candidates: [] };
+    if (r.status === "match") {
+      return { pin: r.pin, resolvedFrom: "address", confidence: r.confidence, candidates: r.candidates };
+    }
+    if (r.status === "ambiguous") {
+      // Precision over recall: do NOT pick. Surface candidates so the caller
+      // (CLI / batch / UI) can ask the agent to disambiguate.
+      return { pin: null, error: r.reason || "multiple candidate parcels — disambiguate", ambiguous: true, candidates: r.candidates };
+    }
+    return { pin: null, error: r.reason || "no PIN found for address", candidates: [] };
   }
   return { pin: null, error: "provide --pin or --address" };
 }
 
-export async function runPipeline({ pin, address, seller }) {
+export async function runPipeline({ pin, address, seller, zip, city }) {
   const t0 = Date.now();
-  const resolved = await resolvePin({ pin, address });
-  if (!resolved.pin) return { ok: false, error: resolved.error || "could not resolve PIN" };
+  const resolved = await resolvePin({ pin, address, zip, city });
+  if (!resolved.pin) return { ok: false, error: resolved.error || "could not resolve PIN", ambiguous: resolved.ambiguous, candidates: resolved.candidates };
   const P = resolved.pin;
 
   // Fan out across sources concurrently.
