@@ -1,0 +1,4 @@
+out/
+*.html
+!src/**
+deal-risk-*.json

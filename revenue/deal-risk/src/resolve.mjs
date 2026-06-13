@@ -73,6 +73,13 @@ export function tokenizeAddress(raw) {
 
   let toks = cleaned.split(" ").filter(Boolean);
 
+  // Trailing 5-digit ZIP (and "CITY, IL 60618" style state). Pull it off the end
+  // so it isn't mistaken for a unit. We surface it as `zip` for the caller to use
+  // as a disambiguating filter.
+  let zip = "";
+  if (toks.length && /^\d{5}$/.test(toks[toks.length - 1])) zip = toks.pop();
+  if (toks.length && /^IL$/.test(toks[toks.length - 1])) toks.pop(); // drop trailing state
+
   // Street number: leading token that is mostly digits (allow "123A").
   let number = "";
   if (toks.length && /^\d+[A-Z]?$/.test(toks[0])) { number = toks.shift(); }
@@ -112,7 +119,7 @@ export function tokenizeAddress(raw) {
   // Trailing directional that some records carry (e.g. "60TH ST" no — leave alone).
 
   const name = toks.join(" ").trim();
-  return { number, dir, name, suffix, unit, raw: cleaned };
+  return { number, dir, name, suffix, unit, zip, raw: cleaned };
 }
 
 // Build the canonical "number dir name suffix" core (no unit) for comparison.
@@ -182,6 +189,8 @@ export async function resolveAddress(address, { zip, city, limit = 60, minScore 
   if (!q.number || !q.name) {
     return { ok: false, status: "error", error: "could not parse a street number + name from address", query: q, candidates: [] };
   }
+  // A ZIP embedded in the address string disambiguates as well as an explicit one.
+  if (!zip && q.zip) zip = q.zip;
 
   // Query strategy: anchor on the street NUMBER + a LIKE on the street NAME token.
   // We avoid leading-% on the whole string (slow + imprecise). The number prefix
