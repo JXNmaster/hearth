@@ -43,9 +43,11 @@ export async function runPipeline({ pin, address, seller, zip, city }) {
   const owner = assessor.currentOwnerFromSales(sales.sales);
 
   // Live recordings search by current owner name (current mortgages/releases/liens/lis pendens).
-  let recorderLive = { ok: false, ms: 0, error: "no owner name resolved", rows: [], analysis: null };
+  // Only run when we have a USABLE owner name — searching a placeholder like
+  // "UNKNOWN" returns unrelated parties and manufactures false clouds.
+  let recorderLive = { ok: false, ms: 0, error: "no usable owner name resolved", rows: [], analysis: null };
   if (owner?.owner) {
-    const live = await recorderByName(owner.owner, { subjectPin: P });
+    const live = await recorderByName(owner.owner, { subjectPin: P, owner: owner.owner });
     recorderLive = { ...live, analysis: live.ok ? analyzeInstruments(live.rows) : null };
   }
 

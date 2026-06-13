@@ -112,7 +112,8 @@ export function detectFlags(record) {
   }
 
   // 6. Vesting / name mismatch (MED) — current owner vs prospective seller (if provided).
-  if (record.input && record.input.seller && record.owner && record.owner.owner) {
+  // Only when we have a USABLE owner name (placeholder owners are skipped upstream).
+  if (record.input && record.input.seller && record.owner && record.owner.owner && !record.owner.ownerUnresolved) {
     const sim = nameSim(record.input.seller, record.owner.owner);
     if (sim < 0.5) {
       add({
@@ -127,41 +128,55 @@ export function detectFlags(record) {
     }
   }
 
-  // 8. LIVE recordings (current) — open mortgage, lis pendens, liens, judgments by owner.
+  // 8. LIVE recordings (current) — open mortgage, lis pendens, liens, judgments.
+  //
+  // PRECISION POSTURE: analyzeInstruments() already discarded rows that did not
+  // strongly match the subject owner's name (the live index returns unrelated
+  // parties). So everything below is owner-scoped. We STILL keep confidences
+  // moderate and framing as "review recommended", because:
+  //   (a) name search can miss instruments recorded under a name variant, and
+  //   (b) it can include a different person who shares the owner's name.
+  // Confidence is nudged up only when an owner-PIN actually appears on the row.
   const live = record.recorderLive && record.recorderLive.analysis;
   if (live) {
+    const pinSeen = (arr) => arr.some((m) => m.pinVerdict === "match");
     if (live.openMortgages.length) {
+      // WEAK signal: "no matching release" relies on the sparse Assoc.Doc# link.
+      // Frame as needs-verification (MED), not a hard open-lien assertion (HIGH).
       add({
         code: "OPEN_MORTGAGE_LIVE",
-        severity: SEV.HIGH,
-        title: `${live.openMortgages.length} mortgage(s) with no matching release found (live recordings)`,
-        why: "An open mortgage must be paid off and released at closing; no satisfaction/release was located in the live index.",
-        curative: "Order payoff; confirm release is recorded before/at closing.",
-        evidence: live.openMortgages.slice(0, 5).map((m) => ({ doc_number: m.doc_number, recorded: m.recorded, grantee: m.grantee, source: "Cook County Clerk Recordings (live)" })),
-        confidence: 0.7,
+        severity: SEV.MED,
+        title: `${live.openMortgages.length} owner mortgage(s) without a confirmed release (live recordings)`,
+        why: "A recorded mortgage tied to this owner has no satisfaction/release linked in the live index. The release link field is sparse, so this is a flag to VERIFY a payoff/release, not a confirmed open lien.",
+        curative: "Confirm whether each mortgage was satisfied; order payoff and confirm release recording as needed.",
+        evidence: live.openMortgages.slice(0, 5).map((m) => ({ doc_number: m.doc_number, recorded: m.recorded, grantee: m.grantee, name_match: m.nameScore, source: "Cook County Clerk Recordings (live)" })),
+        confidence: pinSeen(live.openMortgages) ? 0.6 : 0.45,
       });
     }
     if (live.lisPendens.length) {
+      // Lis pendens is high-signal AND owner-scoped -> keep HIGH but evidence-tag.
       add({
         code: "LIS_PENDENS_LIVE",
         severity: SEV.HIGH,
-        title: `${live.lisPendens.length} lis pendens / foreclosure notice(s) (live recordings)`,
+        title: `${live.lisPendens.length} lis pendens / foreclosure notice(s) tied to owner (live recordings)`,
         why: "A lis pendens signals pending litigation (often foreclosure) affecting the property — a direct cloud on title.",
         curative: "Confirm case status/disposition; resolve or obtain release before closing.",
-        evidence: live.lisPendens.slice(0, 5).map((m) => ({ doc_number: m.doc_number, recorded: m.recorded, grantor: m.grantor, doc_type: m.doc_type, source: "Cook County Clerk Recordings (live)" })),
-        confidence: 0.75,
+        evidence: live.lisPendens.slice(0, 5).map((m) => ({ doc_number: m.doc_number, recorded: m.recorded, grantor: m.grantor, doc_type: m.doc_type, name_match: m.nameScore, source: "Cook County Clerk Recordings (live)" })),
+        confidence: pinSeen(live.lisPendens) ? 0.8 : 0.65,
       });
     }
     if (live.liens.length || live.judgments.length) {
       const items = [...live.liens, ...live.judgments];
       add({
         code: "LIEN_JUDGMENT_LIVE",
-        severity: SEV.HIGH,
-        title: `${items.length} lien/judgment instrument(s) recorded against owner (live recordings)`,
-        why: "Recorded liens/judgments (tax, mechanic's, municipal, money judgments) attach to and encumber the property.",
-        curative: "Verify amounts and payoff; obtain releases at closing.",
-        evidence: items.slice(0, 6).map((m) => ({ doc_number: m.doc_number, recorded: m.recorded, doc_type: m.doc_type, grantor: m.grantor, source: "Cook County Clerk Recordings (live)" })),
-        confidence: 0.6,
+        // Judgments/liens are name-indexed against a PERSON, not a parcel, so a
+        // same-name different-person risk remains. MED + verify framing.
+        severity: SEV.MED,
+        title: `${items.length} lien/judgment instrument(s) recorded against owner name (live recordings)`,
+        why: "Recorded liens/judgments (tax, mechanic's, municipal, money judgments) can attach to property of the named person. These are indexed by NAME, so verify this is the same individual before treating as a property lien.",
+        curative: "Verify identity (same person), amounts, and payoff; obtain releases at closing if confirmed.",
+        evidence: items.slice(0, 6).map((m) => ({ doc_number: m.doc_number, recorded: m.recorded, doc_type: m.doc_type, grantor: m.grantor, name_match: m.nameScore, source: "Cook County Clerk Recordings (live)" })),
+        confidence: pinSeen(items) ? 0.55 : 0.4,
       });
     }
   }

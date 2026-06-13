@@ -46,12 +46,28 @@ export async function assessedValue(pin) {
   return { ok: res.ok, ms: res.ms, error: res.error, value: res.rows[0] || null };
 }
 
+// Placeholder/non-name values that appear in the Parcel Sales buyer field. Using
+// these as the "owner" produces garbage live-recorder searches (matching random
+// parties), so we skip them and report owner as unresolved instead.
+const OWNER_PLACEHOLDER = /^(UNKNOWN|N\/?A|NONE|TBD|GRANTEE|OWNER OF RECORD|\.+|-+)$/i;
+export function isUsableOwnerName(name) {
+  const n = String(name || "").trim();
+  if (n.length < 3) return false;
+  if (OWNER_PLACEHOLDER.test(n)) return false;
+  if (!/[A-Za-z]/.test(n)) return false; // must contain letters
+  return true;
+}
+
 // Current vested owner = buyer on the most recent recorded sale (best open-data proxy).
+// Skips placeholder buyer names ("UNKNOWN", etc.) which would poison name search.
 export function currentOwnerFromSales(sales) {
   for (const s of sales || []) {
-    if (s.buyer_name) {
+    if (isUsableOwnerName(s.buyer_name)) {
       return { owner: s.buyer_name, via_doc: s.doc_no, deed_type: s.deed_type, sale_date: s.sale_date };
     }
   }
+  // Fall back to the most recent sale row purely for deed context (no usable name).
+  const s0 = (sales || [])[0];
+  if (s0) return { owner: null, via_doc: s0.doc_no, deed_type: s0.deed_type, sale_date: s0.sale_date, ownerUnresolved: true };
   return null;
 }
