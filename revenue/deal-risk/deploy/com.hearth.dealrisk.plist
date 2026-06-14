@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Deal-Risk daily runner. Mirrors the Acuna scraper plist pattern.
+  Runs AFTER the Acuna scraper (4 AM CT, ~25-95 min) so a fresh ConnectMLS TSV
+  exists for the orchestrator to consume.
+
+  Install:
+    cp deploy/com.hearth.dealrisk.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hearth.dealrisk.plist
+    launchctl enable gui/$(id -u)/com.hearth.dealrisk
+  Manually trigger (for testing):
+    launchctl kickstart gui/$(id -u)/com.hearth.dealrisk
+  Status / Uninstall:
+    launchctl print gui/$(id -u)/com.hearth.dealrisk
+    launchctl bootout gui/$(id -u)/com.hearth.dealrisk
+  Logs:
+    tail -f /Users/benm4mini/logs/dealrisk-daily.log
+
+  NOTE: StartCalendarInterval is local time. Per the Acuna plist the Mini's TZ is
+  America/Chicago; 7:00 AM gives the 4 AM scrape time to finish. Verify TZ with
+  `sudo systemsetup -gettimezone` before trusting the hour.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hearth.dealrisk</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/benm4mini/Documents/Projects/05_Hearth/revenue/deal-risk/deploy/run-dealrisk-daily.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/benm4mini/Documents/Projects/05_Hearth/revenue/deal-risk</string>
+
+    <!-- 7:00 AM local (after the 4 AM Acuna scrape produces today's TSV). -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Don't fire on every reboot; wait for the next scheduled run. -->
+    <key>RunAtLoad</key>
+    <false/>
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/benm4mini/logs/dealrisk-daily.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/benm4mini/logs/dealrisk-daily.log</string>
+
+    <!-- homebrew bin on PATH so node resolves; .env.local supplies credentials. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
